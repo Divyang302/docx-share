@@ -1,0 +1,152 @@
+@@ -1,18 +0,0 @@
+<!-- Copyright (c) Microsoft Corporation. All rights reserved. Licensed under the MIT License. -->
+
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+
+    <!-- Office JavaScript API -->
+    <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <script>
+        Office.onReady(() => {
+            const params = new URLSearchParams(window.location.search);
+            const raw = params.get('data');
+            if (raw) {
+                const payload = JSON.parse(decodeURIComponent(raw));
+                console.log('▶️ Got payload in the taskpane:', payload);
+                alert('Received payload:\n' + JSON.stringify(payload, null, 2));
+            }
+        });
+
+        function getUserIdFromToken(token) {
+            try {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                return payload.userId || payload.sub || 'user-unknown';
+            } catch (err) {
+                console.error("JWT decode error", err);
+                return 'user-unknown';
+            }
+        }
+
+        // Utility: Convert string to base64 byte array
+        function stringToByteArray(str) {
+            return new TextEncoder().encode(str);
+        }
+
+        function getMimeType(extension) {
+            switch (extension.toLowerCase()) {
+                case ".pdf": return "application/pdf";
+                case ".docx": return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+                case ".doc": return "application/msword";
+                case ".xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+                default: return "application/octet-stream";
+            }
+        }
+
+        async function saveAndSendToMorasalaTec(event) {
+            try {
+                debugger
+                await Word.run(async (context) => {
+                    debugger
+                    const body = context.document.body;
+                    body.load("text");
+                    await context.sync();
+                    const getToken = localStorage.getItem("test")
+                    const docText = body.text;
+
+                    // Get token and filePath from the URL
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const token = urlParams.get("token") || "";
+                    const filePath = urlParams.get("filePath") || `WordDoc-${Date.now()}.docx`;
+
+                    const userId = getUserIdFromToken(token);
+                    const uniqueId = crypto.randomUUID();
+                    const fileName = filePath.split(/[/\\]/).pop();
+                    const fileNameWithoutExt = fileName.split('.').slice(0, -1).join('.') || fileName;
+                    const fileExtension = '.' + fileName.split('.').pop();
+                    const fileType = getMimeType(fileExtension);
+
+                    const docBytes = stringToByteArray(docText);
+
+                    const payload = {
+                        UniqueId: uniqueId,
+                        FileTitle: fileNameWithoutExt,
+                        FileName: fileName,
+                        FileType: fileType,
+                        FileExtension: fileExtension,
+                        FileBytes: Array.from(docBytes),
+                        FileTextBytes: docText,
+                        CreatedBy: userId
+                    };
+
+                    // Send to API
+                    const res = await fetch("http://localhost:5117/gateway/cms/Attachments/add", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            ...(token && { Authorization: `Bearer ${token}` })
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await res.json();
+
+                    if (res.ok) {
+                        window.open(`http://localhost:4200/correspondences/create/1?id=${uniqueId}`, '_blank');
+                    } else {
+                        console.error("Upload failed:", result);
+                        alert(`Upload failed: ${res.status} - ${result?.message || "Unknown error"}`);
+                    }
+
+                    event.completed();
+                });
+            } catch (error) {
+                console.error("Word.run error:", error);
+                event.completed();
+            }
+        }
+
+        function getMimeType(extension) {
+            switch (extension.toLowerCase()) {
+                case ".pdf": return "application/pdf";
+                case ".docx": return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+                case ".doc": return "application/msword";
+                case ".xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+                default: return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            }
+            console.log("saveAndSendToMorasalaTec");
+            Word.run(async (context) => {
+                const body = context.document.body;
+                context.load(body, "text");
+                await context.sync();
+
+                const text = body.text;
+                const uniqueId = crypto.randomUUID();
+
+                const payload = {
+                    uniqueId,
+                    fileTextBytes: text,
+                    fileTitle: `WordDoc-${Date.now()}`,
+                    createdBy: "user-xyz"
+                };
+
+                window.open(`http://localhost:4200/correspondences/create/1?id=${uniqueId}`, "_blank");
+
+                event.completed();
+            }).catch((error) => {
+                console.error("Error in saveAndSendToMorasalaTec:", error);
+                event.completed();
+            });
+        }
+    </script>
+
+</head>
+
+<body>
+
+</body>
+
+</html>
